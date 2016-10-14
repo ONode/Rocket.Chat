@@ -1,13 +1,20 @@
 RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 	constructor: ->
-		@_initModel 'subscription'
+		super('subscription')
 
 		@tryEnsureIndex { 'rid': 1, 'u._id': 1 }, { unique: 1 }
-		@tryEnsureIndex { 'u._id': 1, 'name': 1, 't': 1 }, { unique: 1 }
+		@tryEnsureIndex { 'rid': 1, 'alert': 1, 'u._id': 1 }
+		@tryEnsureIndex { 'rid': 1, 'roles': 1 }
+		@tryEnsureIndex { 'u._id': 1, 'name': 1, 't': 1 }
+		@tryEnsureIndex { 'u._id': 1, 'name': 1, 't': 1, 'code': 1 }, { unique: 1 }
 		@tryEnsureIndex { 'open': 1 }
 		@tryEnsureIndex { 'alert': 1 }
 		@tryEnsureIndex { 'unread': 1 }
 		@tryEnsureIndex { 'ts': 1 }
+		@tryEnsureIndex { 'ls': 1 }
+		@tryEnsureIndex { 'desktopNotifications': 1 }, { sparse: 1 }
+		@tryEnsureIndex { 'mobilePushNotifications': 1 }, { sparse: 1 }
+		@tryEnsureIndex { 'emailNotifications': 1 }, { sparse: 1 }
 
 
 	# FIND ONE
@@ -25,6 +32,51 @@ RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 
 		return @find query, options
 
+	findByUserIdUpdatedAfter: (userId, updatedAt, options) ->
+		query =
+			"u._id": userId
+			_updatedAt:
+				$gt: updatedAt
+
+		return @find query, options
+
+	# FIND
+	findByRoomIdAndRoles: (roomId, roles, options) ->
+		roles = [].concat roles
+		query =
+			"rid": roomId
+			"roles": { $in: roles }
+
+		return @find query, options
+
+	findByType: (types, options) ->
+		query =
+			t:
+				$in: types
+
+		return @find query, options
+
+	findByTypeAndUserId: (type, userId, options) ->
+		query =
+			t: type
+			'u._id': userId
+
+		return @find query, options
+
+	findByTypeNameAndUserId: (type, name, userId, options) ->
+		query =
+			t: type
+			name: name
+			'u._id': userId
+
+		return @find query, options
+
+	findByRoomId: (roomId, options) ->
+		query =
+			"rid": roomId
+
+		return @find query, options
+
 	getLastSeen: (options = {}) ->
 		query = { ls: { $exists: 1 } }
 		options.sort = { ls: -1 }
@@ -32,11 +84,18 @@ RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 
 		return @find(query, options)?.fetch?()?[0]?.ls
 
-	# UPDATE
-	archiveByRoomIdAndUserId: (roomId, userId) ->
+	findByRoomIdAndUserIds: (roomId, userIds) ->
 		query =
 			rid: roomId
-			'u._id': userId
+			'u._id':
+				$in: userIds
+
+		return @find query
+
+	# UPDATE
+	archiveByRoomId: (roomId) ->
+		query =
+			rid: roomId
 
 		update =
 			$set:
@@ -44,12 +103,11 @@ RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 				open: false
 				archived: true
 
-		return @update query, update
+		return @update query, update, { multi: true }
 
-	unarchiveByRoomIdAndUserId: (roomId, userId) ->
+	unarchiveByRoomId: (roomId) ->
 		query =
 			rid: roomId
-			'u._id': userId
 
 		update =
 			$set:
@@ -57,7 +115,7 @@ RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 				open: true
 				archived: false
 
-		return @update query, update
+		return @update query, update, { multi: true }
 
 	hideByRoomIdAndUserId: (roomId, userId) ->
 		query =
@@ -96,6 +154,19 @@ RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 
 		return @update query, update
 
+	setAsUnreadByRoomIdAndUserId: (roomId, userId, firstMessageUnreadTimestamp) ->
+		query =
+			rid: roomId
+			'u._id': userId
+
+		update =
+			$set:
+				open: true
+				alert: true
+				ls: firstMessageUnreadTimestamp
+
+		return @update query, update
+
 	setFavoriteByRoomIdAndUserId: (roomId, userId, favorite=true) ->
 		query =
 			rid: roomId
@@ -107,7 +178,7 @@ RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 
 		return @update query, update
 
-	updateNameByRoomId: (roomId, name) ->
+	updateNameAndAlertByRoomId: (roomId, name) ->
 		query =
 			rid: roomId
 
@@ -115,6 +186,16 @@ RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 			$set:
 				name: name
 				alert: true
+
+		return @update query, update, { multi: true }
+
+	updateNameByRoomId: (roomId, name) ->
+		query =
+			rid: roomId
+
+		update =
+			$set:
+				name: name
 
 		return @update query, update, { multi: true }
 
@@ -185,17 +266,19 @@ RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 
 		return @update query, update, { multi: true }
 
-	setAlertForRoomIdExcludingUserId: (roomId, userId, alert=true) ->
+	setAlertForRoomIdExcludingUserId: (roomId, userId) ->
 		query =
 			rid: roomId
-			alert:
-				$ne: alert
 			'u._id':
 				$ne: userId
+			$or: [
+				{ alert: { $ne: true } }
+				{ open: { $ne: true } }
+			]
 
 		update =
 			$set:
-				alert: alert
+				alert: true
 				open: true
 
 		return @update query, update, { multi: true }
@@ -207,6 +290,37 @@ RocketChat.models.Subscriptions = new class extends RocketChat.models._Base
 		update =
 			$set:
 				t: type
+
+		return @update query, update, { multi: true }
+
+	addRoleById: (_id, role) ->
+		query =
+			_id: _id
+
+		update =
+			$addToSet:
+				roles: role
+
+		return @update query, update
+
+	removeRoleById: (_id, role) ->
+		query =
+			_id: _id
+
+		update =
+			$pull:
+				roles: role
+
+		return @update query, update
+
+	setArchivedByUsername: (username, archived) ->
+		query =
+			t: 'd'
+			name: username
+
+		update =
+			$set:
+				archived: archived
 
 		return @update query, update, { multi: true }
 

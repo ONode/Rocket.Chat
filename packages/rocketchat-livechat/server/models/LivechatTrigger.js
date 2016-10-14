@@ -3,13 +3,12 @@
  */
 class LivechatTrigger extends RocketChat.models._Base {
 	constructor() {
-		super();
-		this._initModel('livechat_trigger');
+		super('livechat_trigger');
 	}
 
 	// FIND
 	save(data) {
-		trigger = this.findOne();
+		const trigger = this.findOne();
 
 		if (trigger) {
 			return this.update({ _id: trigger._id }, { $set: data });

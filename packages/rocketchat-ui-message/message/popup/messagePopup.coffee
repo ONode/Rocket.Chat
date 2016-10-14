@@ -1,3 +1,15 @@
+# This is not supposed to be a complete list
+# it is just to improve readability in this file
+keys = {
+	TAB: 9
+	ENTER: 13
+	ESC: 27
+	ARROW_LEFT: 37
+	ARROW_UP: 38
+	ARROW_RIGHT: 39
+	ARROW_DOWN: 40
+}
+
 getCursorPosition = (input) ->
 	if not input? then return
 	if input.selectionStart?
@@ -35,13 +47,13 @@ Template.messagePopup.onCreated ->
 
 	template.value = new ReactiveVar
 
-	template.trigger = val(template.data.trigger, '@')
+	template.trigger = val(template.data.trigger, '')
 
 	template.triggerAnywhere = val(template.data.triggerAnywhere, true)
 
 	template.prefix = val(template.data.prefix, template.trigger)
 
-	template.suffix = val(template.data.suffix, ' ')
+	template.suffix = val(template.data.suffix, '')
 
 	if template.triggerAnywhere is true
 		template.matchSelectorRegex = val(template.data.matchSelectorRegex, new RegExp "(?:^| )#{template.trigger}[^\\s]*$")
@@ -56,7 +68,7 @@ Template.messagePopup.onCreated ->
 
 	template.up = =>
 		current = template.find('.popup-item.selected')
-		previous = current.previousElementSibling or template.find('.popup-item:last-child')
+		previous = $(current).prev('.popup-item')[0] or template.find('.popup-item:last-child')
 		if previous?
 			current.className = current.className.replace /\sselected/, ''
 			previous.className += ' selected'
@@ -64,8 +76,8 @@ Template.messagePopup.onCreated ->
 
 	template.down = =>
 		current = template.find('.popup-item.selected')
-		next = current.nextElementSibling or template.find('.popup-item')
-		if next?
+		next = $(current).next('.popup-item')[0] or template.find('.popup-item')
+		if next?.classList.contains('popup-item')
 			current.className = current.className.replace /\sselected/, ''
 			next.className += ' selected'
 			template.value.set next.getAttribute('data-id')
@@ -84,11 +96,11 @@ Template.messagePopup.onCreated ->
 		if template.open.curValue isnt true or template.hasData.curValue isnt true
 			return
 
-		if event.which in [38, 40]
+		if event.which in [keys.ARROW_UP, keys.ARROW_DOWN]
 			event.preventDefault()
 			event.stopPropagation()
 
-		if event.which in [13, 9]
+		if event.which in [keys.ENTER, keys.TAB]
 			template.open.set false
 
 			template.enterValue()
@@ -96,12 +108,17 @@ Template.messagePopup.onCreated ->
 			event.preventDefault()
 			event.stopPropagation()
 
+		if event.which is keys.ARROW_UP
+			template.up()
+		else if event.which is keys.ARROW_DOWN
+			template.down()
+
 	template.setTextFilter = _.debounce (value) ->
 		template.textFilter.set(value)
 	, template.textFilterDelay
 
 	template.onInputKeyup = (event) =>
-		if template.open.curValue is true and event.which is 27
+		if template.open.curValue is true and event.which is keys.ESC
 			template.open.set false
 			event.preventDefault()
 			event.stopPropagation()
@@ -119,11 +136,7 @@ Template.messagePopup.onCreated ->
 		if template.open.curValue isnt true
 			return
 
-		if event.which is 38
-			template.up()
-		else if event.which is 40
-			template.down()
-		else
+		if event.which not in [keys.ARROW_UP, keys.ARROW_DOWN]
 			Meteor.defer =>
 				template.verifySelection()
 
@@ -134,8 +147,12 @@ Template.messagePopup.onCreated ->
 		caret = getCursorPosition(template.input)
 		firstPartValue = value.substr 0, caret
 		lastPartValue = value.substr caret
+		getValue = this.getValue(template.value.curValue, template.data.collection, template.records.get(), firstPartValue)
 
-		firstPartValue = firstPartValue.replace(template.selectorRegex, template.prefix + this.getValue(template.value.curValue, template.data.collection, firstPartValue) + template.suffix)
+		if not getValue
+			return
+
+		firstPartValue = firstPartValue.replace(template.selectorRegex, template.prefix + getValue + template.suffix)
 
 		template.input.value = firstPartValue + lastPartValue
 
@@ -143,25 +160,32 @@ Template.messagePopup.onCreated ->
 
 	template.records = new ReactiveVar []
 	Tracker.autorun ->
-		if template.data.collection.find?
+		if template.data.collection.findOne?
 			template.data.collection.find().count()
 
 		filter = template.textFilter.get()
 		if filter?
-			result = template.data.getFilter template.data.collection, filter
-			if (template.data.collection instanceof Meteor.Collection and result.count? and result.count() is 0) or result?.length is 0
-				template.hasData.set false
-			else
-				template.hasData.set true
+			filterCallback = (result) =>
+				template.hasData.set result?.length > 0
+				template.records.set result
 
-			template.records.set result
+				Meteor.defer =>
+					template.verifySelection()
 
-			Meteor.defer =>
-				template.verifySelection()
+			result = template.data.getFilter(template.data.collection, filter, filterCallback)
+			if result?
+				filterCallback result
 
 
 Template.messagePopup.onRendered ->
-	this.input = this.data.getInput?()
+	if this.data.getInput?
+		this.input = this.data.getInput?()
+	else if this.data.input
+		this.input = this.parentTemplate().find(this.data.input)
+
+	if not this.input?
+		console.error 'Input not found for popup'
+
 	$(this.input).on 'keyup', this.onInputKeyup.bind this
 	$(this.input).on 'keydown', this.onInputKeydown.bind this
 

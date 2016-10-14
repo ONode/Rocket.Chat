@@ -15,22 +15,26 @@ usernameIsAvaliable = (username) ->
 	usernames = []
 	username = undefined
 
-	if RocketChat.settings.get 'UTF8_Names_Slugify'
-		usernames.push slug user.name
-	else
-		usernames.push user.name
+	if Meteor.settings.public.sandstorm
+		usernames.push user.services.sandstorm.preferredHandle
 
-	nameParts = user?.name?.split()
-	if nameParts.length > 1
-		first = nameParts[0]
-		last = nameParts[nameParts.length - 1]
-
+	if Match.test(user?.name, String)
 		if RocketChat.settings.get 'UTF8_Names_Slugify'
-			usernames.push slug first[0] + last
-			usernames.push slug first + last[0]
+			usernames.push slug user.name
 		else
-			usernames.push first[0] + last
-			usernames.push first + last[0]
+			usernames.push user.name
+
+		nameParts = user?.name?.split(' ')
+		if nameParts.length > 1
+			first = nameParts[0]
+			last = nameParts[nameParts.length - 1]
+
+			if RocketChat.settings.get 'UTF8_Names_Slugify'
+				usernames.push slug first[0] + last
+				usernames.push slug first + last[0]
+			else
+				usernames.push first[0] + last
+				usernames.push first + last[0]
 
 	if user.profile?.name?
 		if RocketChat.settings.get 'UTF8_Names_Slugify'
@@ -39,17 +43,16 @@ usernameIsAvaliable = (username) ->
 			usernames.push user.profile.name
 
 	if user.services?
-		for serviceName, service of user.services
-			if service.name?
-				if RocketChat.settings.get 'UTF8_Names_Slugify'
-					usernames.push slug service.name
-				else
-					usernames.push service.name
-			else if service.username?
-				if RocketChat.settings.get 'UTF8_Names_Slugify'
-					usernames.push slug service.username
-				else
-					usernames.push service.username
+		services = _.map user.services, (service) ->
+			return _.values(_.pick(service, 'name', 'username', 'firstName', 'lastName'))
+
+		services = _.uniq(_.flatten(services))
+
+		for service in services
+			if RocketChat.settings.get 'UTF8_Names_Slugify'
+				usernames.push slug service
+			else
+				usernames.push service
 
 	if user.emails?.length > 0
 		for email in user.emails when email.address? and email.verified is true
@@ -58,17 +61,21 @@ usernameIsAvaliable = (username) ->
 		for email in user.emails when email.address? and email.verified is true
 			usernames.push slug email.address.replace(/(.+)@(\w+).+/, '$1.$2')
 
+	usernames = _.compact(usernames)
+
 	for item in usernames
 		if usernameIsAvaliable item
 			username = item
 			break
 
-	if usernames[0]? and usernames[0].length > 0
-		index = 0
-		while not username?
-			index++
-			if usernameIsAvaliable usernames[0] + '-' + index
-				username = usernames[0] + '-' + index
+	if usernames.length is 0 or usernames[0].length is 0
+		usernames.push('user')
+
+	index = 0
+	while not username?
+		index++
+		if usernameIsAvaliable usernames[0] + '-' + index
+			username = usernames[0] + '-' + index
 
 	if usernameIsAvaliable username
 		return username
@@ -78,8 +85,8 @@ RocketChat.generateUsernameSuggestion = generateSuggestion
 
 Meteor.methods
 	getUsernameSuggestion: ->
-		if not Meteor.userId()
-			throw new Meteor.Error 203, '[methods] getUsernameSuggestion -> Usuário não logado'
+		unless Meteor.userId()
+			throw new Meteor.Error 'error-invalid-user', 'Invalid user', { method: 'getUsernameSuggestion' }
 
 		user = Meteor.user()
 		return generateSuggestion(user)

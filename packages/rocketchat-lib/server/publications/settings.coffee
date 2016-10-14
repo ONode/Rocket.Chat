@@ -1,20 +1,42 @@
-Meteor.publish 'settings', (ids = []) ->
-	filter =
-		hidden: { $ne: true }
-		public: true
+Meteor.methods
+	'public-settings/get': (updatedAt) ->
+		this.unblock()
 
-	if ids.length > 0
-		filter._id =
-			$in: ids
+		if updatedAt instanceof Date
+			result =
+				update: RocketChat.models.Settings.findNotHiddenPublicUpdatedAfter(updatedAt).fetch()
+				remove: RocketChat.models.Settings.trashFindDeletedAfter(updatedAt, {hidden: { $ne: true }, public: true}, {fields: {_id: 1, _deletedAt: 1}}).fetch()
 
-	return RocketChat.models.Settings.find filter, { fields: _id: 1, value: 1 }
+			return result
 
-Meteor.publish 'admin-settings', ->
-	unless @userId
-		return @ready()
+		return RocketChat.models.Settings.findNotHiddenPublic().fetch()
 
-	if RocketChat.authz.hasPermission( @userId, 'view-privileged-setting')
-		return RocketChat.models.Settings.find({ hidden: { $ne: true } })
-	else
-		return @ready()
+	'private-settings/get': (updatedAt) ->
+		unless Meteor.userId()
+			return []
 
+		this.unblock()
+
+		if not RocketChat.authz.hasPermission Meteor.userId(), 'view-privileged-setting'
+			return []
+
+		if updatedAt instanceof Date
+			return RocketChat.models.Settings.dinamicFindChangesAfter('findNotHidden', updatedAt);
+
+		return RocketChat.models.Settings.findNotHidden().fetch()
+
+
+RocketChat.models.Settings.on 'change', (type, args...) ->
+	records = RocketChat.models.Settings.getChangedRecords type, args[0]
+
+	for record in records
+		if record.public is true
+			RocketChat.Notifications.notifyAll 'public-settings-changed', type, _.pick(record, '_id', 'value')
+
+		RocketChat.Notifications.notifyAll 'private-settings-changed', type, record
+
+
+RocketChat.Notifications.streamAll.allowRead 'private-settings-changed', ->
+	if not @userId? then return false
+
+	return RocketChat.authz.hasPermission @userId, 'view-privileged-setting'

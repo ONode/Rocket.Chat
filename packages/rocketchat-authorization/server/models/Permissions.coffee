@@ -1,6 +1,6 @@
 RocketChat.models.Permissions = new class extends RocketChat.models._Base
 	constructor: ->
-		@_initModel 'permissions'
+		super('permissions')
 
 	# FIND
 	findByRole: (role, options) ->
@@ -8,6 +8,9 @@ RocketChat.models.Permissions = new class extends RocketChat.models._Base
 			roles: role
 
 		return @find query, options
+
+	findOneById: (_id) ->
+		return @findOne _id
 
 	createOrUpdate: (name, roles) ->
 		@upsert { _id: name }, { $set: { roles: roles } }

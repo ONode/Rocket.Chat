@@ -1,22 +1,35 @@
+/* globals Department, Livechat, LivechatVideoCall */
+
 Template.register.helpers({
 	error() {
 		return Template.instance().error.get();
 	},
 	welcomeMessage() {
-		return "";
+		return '';
 	},
 	hasDepartments() {
 		return Department.find().count() > 1;
 	},
 	departments() {
 		return Department.find();
+	},
+	videoCallEnabled() {
+		return Livechat.videoCall;
 	}
 });
 
 Template.register.events({
-	'submit #livechat-registration' (e, instance) {
+	'submit #livechat-registration'(e, instance) {
 		var $email, $name;
 		e.preventDefault();
+
+		let start = () => {
+			instance.hideError();
+			if (instance.request === 'video') {
+				LivechatVideoCall.request();
+			}
+		};
+
 		$name = instance.$('input[name=name]');
 		$email = instance.$('input[name=email]');
 		if (!($name.val().trim() && $email.val().trim())) {
@@ -44,19 +57,25 @@ Template.register.events({
 					if (error) {
 						return instance.showError(error.reason);
 					}
+					start();
 				});
 			});
 		}
 	},
-	'click .error' (e, instance) {
+	'click .error'(e, instance) {
 		return instance.hideError();
+	},
+	'click .request-chat'(e, instance) {
+		instance.request = 'chat';
+	},
+	'click .request-video'(e, instance) {
+		instance.request = 'video';
 	}
 });
 
 Template.register.onCreated(function() {
-	this.subscribe('livechat:availableDepartments');
-
-	this.error = new ReactiveVar;
+	this.error = new ReactiveVar();
+	this.request = '';
 	this.showError = (msg) => {
 		$('.error').addClass('show');
 		this.error.set(msg);

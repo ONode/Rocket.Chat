@@ -6,19 +6,15 @@ Package.describe({
 });
 
 Package.onUse(function(api) {
-	api.versionsFrom('1.0');
-
 	api.use([
 		'coffeescript',
 		'underscore',
+		'ecmascript',
 		'rocketchat:lib',
 		'nimble:restivus'
 	]);
 
 	api.addFiles('server/api.coffee', 'server');
 	api.addFiles('server/routes.coffee', 'server');
-});
-
-Package.onTest(function(api) {
-
+	api.addFiles('server/settings.js', 'server');
 });
